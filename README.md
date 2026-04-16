@@ -20,7 +20,7 @@ is available on this machine.
 - Score photos for sharpness, lighting, composition, and overall quality.
 - Suggest one standout per duplicate or similar-photo group.
 - Pick the top 15 photos from the current view while avoiding near-duplicate moments.
-- Learn from your feedback with Like, Maybe, and Reject labels.
+- Train a local taste model from Like, Maybe, and Reject labels.
 - View all indexed photos, only the selected folder, or only the last scan.
 - Clear all indexed records or only the selected folder's records.
 - Remove database records for files that no longer exist.
@@ -104,9 +104,13 @@ The picker first chooses the standout from each similar-photo group, then fills
 the remaining slots by overall quality score. This helps avoid selecting many
 near-identical versions of the same moment.
 
-Use **Like**, **Maybe**, and **Reject** on selected photos to train the picker.
+Use **Like**, **Maybe**, and **Reject** on selected photos to teach the picker.
 Liked photos move up, rejected photos move down, and the feedback is stored
-locally so future Top Picks reflect your taste better.
+locally.
+
+Use **Train Model** after marking at least 2 liked and 2 rejected photos. The app
+builds a small local taste model from your feedback and uses it to reorder future
+Top Picks. As you mark more photos, run **Train Model** again to refine it.
 
 Use **Export Top Picks** to copy the current picks into:
 
@@ -127,6 +131,7 @@ sanik_photo/
   organizer.py          Captions and folder-path suggestions
   quality.py            Local photo quality scoring
   scanner.py            Folder scanning and hashing
+  taste_model.py        Local preference model trained from your feedback
   top_picks.py          Best-photo selection
   ui.py                 Tkinter desktop interface
 tests/
@@ -138,3 +143,4 @@ tests/
 - Add thumbnails and EXIF date taken.
 - Add event grouping by time and folder.
 - Add local face detection and people tagging.
+- Add richer image embeddings for taste learning.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 from typing import Iterable
@@ -86,6 +87,12 @@ class PhotoDatabase:
                 note TEXT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY(photo_id) REFERENCES photos(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
             """
         )
@@ -392,6 +399,42 @@ class PhotoDatabase:
             (photo_id, rating, note),
         )
         self.connection.commit()
+
+    def list_rated_photos(self) -> list[PhotoRecord]:
+        rows = self.connection.execute(
+            """
+            SELECT id, path, filename, extension, file_size, modified_at, sha256,
+                   library_root, width, height, perceptual_hash, sharpness_score,
+                   lighting_score, composition_score, expression_score, quality_score,
+                   user_rating
+            FROM photos
+            WHERE user_rating IS NOT NULL
+            ORDER BY modified_at DESC
+            """
+        ).fetchall()
+        return [self._photo_from_row(row) for row in rows]
+
+    def save_setting(self, key: str, value: dict) -> None:
+        self.connection.execute(
+            """
+            INSERT INTO app_settings(key, value, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(key) DO UPDATE SET
+                value=excluded.value,
+                updated_at=CURRENT_TIMESTAMP
+            """,
+            (key, json.dumps(value, sort_keys=True)),
+        )
+        self.connection.commit()
+
+    def load_setting(self, key: str) -> dict | None:
+        row = self.connection.execute(
+            "SELECT value FROM app_settings WHERE key = ?",
+            (key,),
+        ).fetchone()
+        if not row:
+            return None
+        return json.loads(str(row["value"]))
 
     def clear_library(self, library_root: str | None = None) -> int:
         if library_root:

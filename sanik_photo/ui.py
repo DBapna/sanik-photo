@@ -21,6 +21,7 @@ from .file_actions import move_review_duplicates, unique_target
 from .models import DuplicateGroup
 from .organizer import caption_for_photo, suggested_organization_path
 from .scanner import scan_folder
+from .taste_model import load_taste_model, train_taste_model
 from .top_picks import DEFAULT_PICK_COUNT, select_top_picks
 
 
@@ -158,6 +159,7 @@ class PhotoManagerApp(tk.Tk):
         ttk.Button(actions, text="Caption", command=self._generate_selected_caption).pack(side=LEFT, padx=(8, 0))
         ttk.Button(actions, text="Top Picks", command=self._refresh_top_picks).pack(side=LEFT, padx=(8, 0))
         ttk.Button(actions, text="Export Picks", command=self._export_top_picks).pack(side=LEFT, padx=(8, 0))
+        ttk.Button(actions, text="Train Model", command=self._train_taste_model).pack(side=LEFT, padx=(8, 0))
         ttk.Button(actions, text="Like", command=lambda: self._rate_selected_photo(1), style="Gold.TButton").pack(side=RIGHT)
         ttk.Button(actions, text="Maybe", command=lambda: self._rate_selected_photo(0)).pack(side=RIGHT, padx=(0, 8))
         ttk.Button(actions, text="Reject", command=lambda: self._rate_selected_photo(-1)).pack(side=RIGHT, padx=(0, 8))
@@ -616,7 +618,8 @@ class PhotoManagerApp(tk.Tk):
                 ),
             )
         if show_status:
-            self.status.set(f"Selected {len(self.top_picks)} top picks for the current view.")
+            model_note = "taste model on" if load_taste_model(self.database) else "heuristics only"
+            self.status.set(f"Selected {len(self.top_picks)} top picks for the current view ({model_note}).")
 
     def _export_top_picks(self) -> None:
         if not self.top_picks:
@@ -656,6 +659,15 @@ class PhotoManagerApp(tk.Tk):
         self._refresh_tables()
         self._show_selected_details()
         self.status.set(f"Saved preference: {format_preference(rating)}.")
+
+    def _train_taste_model(self) -> None:
+        result = train_taste_model(self.database)
+        self.status.set(result.message)
+        if result.trained:
+            self._refresh_top_picks(show_status=False)
+            self.notebook.select(self.top_picks_tree.master)
+        else:
+            messagebox.showinfo("More feedback needed", result.message)
 
 
 def format_bytes(size: int) -> str:

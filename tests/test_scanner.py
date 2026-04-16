@@ -13,6 +13,7 @@ from sanik_photo.duplicate_finder import (
 )
 from sanik_photo.scanner import scan_folder
 from sanik_photo.organizer import caption_for_photo, suggested_organization_path
+from sanik_photo.taste_model import load_taste_model, train_taste_model
 from sanik_photo.top_picks import select_top_picks
 
 try:
@@ -167,6 +168,44 @@ class ScannerTest(unittest.TestCase):
                 db.close()
 
             self.assertEqual(picks[0].filename, "second.jpg")
+
+    @unittest.skipIf(Image is None, "Pillow is not installed")
+    def test_taste_model_trains_from_likes_and_rejects(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            colors = ("white", "lightgray", "black", "dimgray")
+            for index, color in enumerate(colors):
+                Image.new("RGB", (160 + index * 20, 160), color).save(root / f"{index}.jpg")
+
+            db = PhotoDatabase(root / "test.sqlite3")
+            try:
+                db.upsert_photos(scan_folder(root))
+                photos = {photo.filename: photo for photo in db.list_photos(limit=10)}
+                db.set_photo_rating(int(photos["0.jpg"].id), 1)
+                db.set_photo_rating(int(photos["1.jpg"].id), 1)
+                db.set_photo_rating(int(photos["2.jpg"].id), -1)
+                db.set_photo_rating(int(photos["3.jpg"].id), -1)
+
+                result = train_taste_model(db)
+                model = load_taste_model(db)
+                picks = select_top_picks(db, count=1, library_root=str(root.resolve()))
+            finally:
+                db.close()
+
+            self.assertTrue(result.trained)
+            self.assertIsNotNone(model)
+            self.assertIn(picks[0].filename, {"0.jpg", "1.jpg"})
+
+    def test_taste_model_requires_enough_feedback(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db = PhotoDatabase(Path(temp_dir) / "test.sqlite3")
+            try:
+                result = train_taste_model(db)
+            finally:
+                db.close()
+
+            self.assertFalse(result.trained)
+            self.assertIn("2 liked and 2 rejected", result.message)
 
     def test_hamming_distance(self) -> None:
         self.assertEqual(hamming_distance("ff", "ff"), 0)
