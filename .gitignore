@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+*.sqlite3
+*.db
+.venv/
+venv/
+_photo_manager_review/
+_photo_manager_top_picks/
+_sanik_photo_review/
+_sanik_photo_top_picks/

@@ -1,0 +1,1 @@
+"""SanikPhoto desktop photo manager."""
