@@ -4,6 +4,7 @@ import hashlib
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
+from .image_loader import register_image_openers
 from .models import PhotoRecord
 from .quality import score_image
 
@@ -13,6 +14,7 @@ except ImportError:
     Image = None
     ImageOps = None
 
+register_image_openers()
 
 SUPPORTED_EXTENSIONS = {
     ".jpg",

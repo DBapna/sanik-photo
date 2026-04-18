@@ -5,8 +5,10 @@ from pathlib import Path
 from PIL import Image, ImageOps
 
 from .file_actions import unique_target
+from .image_loader import register_image_openers
 from .models import PhotoRecord
 
+register_image_openers()
 
 def resize_photos(
     photos: list[PhotoRecord],

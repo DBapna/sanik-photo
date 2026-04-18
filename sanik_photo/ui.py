@@ -20,12 +20,14 @@ from .database import PhotoDatabase
 from .duplicate_finder import find_exact_duplicate_groups, find_similar_photo_groups
 from .file_actions import move_review_duplicates, unique_target
 from .image_export import resize_photos
+from .image_loader import register_image_openers
 from .models import DuplicateGroup
 from .organizer import caption_for_photo, suggested_organization_path
 from .scanner import scan_folder
 from .taste_model import load_taste_model, train_taste_model
 from .top_picks import DEFAULT_PICK_COUNT, DEFAULT_SCORE_THRESHOLD, TOP_PICK_MODES, adjusted_quality, select_top_picks
 
+register_image_openers()
 
 SANIK_LOGO_PATH = Path(
     r"C:\Users\deepa\OneDrive\Documents\Deepak Documents\Personal\Sanik Advising and Consulting"
@@ -71,6 +73,11 @@ class PhotoManagerApp(tk.Tk):
         self.logo_image = None
         self.preview_image = None
         self.large_preview_image = None
+        self.review_window = None
+        self.review_image_label = None
+        self.review_detail_text = None
+        self.review_photos = []
+        self.review_index = 0
 
         self._configure_style()
         self._build_ui()
@@ -707,37 +714,51 @@ class PhotoManagerApp(tk.Tk):
             messagebox.showinfo("More feedback needed", result.message)
 
     def _open_large_review(self) -> None:
-        photo_id = self._selected_photo_id()
-        if photo_id is None:
-            messagebox.showinfo("Select a photo", "Select one photo row first.")
+        self.review_photos = self._current_review_photos()
+        if not self.review_photos:
+            messagebox.showinfo("No photos", "There are no photos in the current review set.")
             return
-        photo = self.database.get_photo(photo_id)
-        if photo is None:
-            return
+        selected_id = self._selected_photo_id()
+        if selected_id is not None:
+            for index, photo in enumerate(self.review_photos):
+                if photo.id == selected_id:
+                    self.review_index = index
+                    break
+            else:
+                self.review_index = 0
+        else:
+            self.review_index = 0
 
         window = tk.Toplevel(self)
+        self.review_window = window
         window.title("SanikPhoto Review")
         window.geometry("980x760")
         window.configure(bg=COLORS["bg"])
 
         image_label = tk.Label(window, bg=COLORS["surface"], fg=COLORS["muted"])
+        self.review_image_label = image_label
         image_label.pack(fill=BOTH, expand=True, padx=14, pady=14)
-        self._load_large_preview(photo.path, image_label)
 
         details = ttk.Frame(window, padding=(14, 8), style="Toolbar.TFrame")
         details.pack(fill=X)
-        ttk.Label(
+        detail_label = ttk.Label(
             details,
-            text=f"{photo.filename}  Score {format_score(photo.quality_score)}  "
-            f"Joy {format_score(photo.people_score)}  Wow {format_score(photo.scenery_score)}",
+            text="",
             style="Path.TLabel",
-        ).pack(side=LEFT, fill=X, expand=True)
-        ttk.Button(details, text="Reject (R)", command=lambda: self._review_rate(window, photo.id, -1)).pack(side=RIGHT, padx=(8, 0))
-        ttk.Button(details, text="Maybe (M)", command=lambda: self._review_rate(window, photo.id, 0)).pack(side=RIGHT, padx=(8, 0))
-        ttk.Button(details, text="Like (L)", command=lambda: self._review_rate(window, photo.id, 1), style="Gold.TButton").pack(side=RIGHT)
-        window.bind("l", lambda _event: self._review_rate(window, photo.id, 1))
-        window.bind("m", lambda _event: self._review_rate(window, photo.id, 0))
-        window.bind("r", lambda _event: self._review_rate(window, photo.id, -1))
+        )
+        self.review_detail_text = detail_label
+        detail_label.pack(side=LEFT, fill=X, expand=True)
+        ttk.Button(details, text="Previous", command=self._review_previous).pack(side=RIGHT, padx=(8, 0))
+        ttk.Button(details, text="Next", command=self._review_next).pack(side=RIGHT, padx=(8, 0))
+        ttk.Button(details, text="Reject (R)", command=lambda: self._review_rate(-1)).pack(side=RIGHT, padx=(8, 0))
+        ttk.Button(details, text="Maybe (M)", command=lambda: self._review_rate(0)).pack(side=RIGHT, padx=(8, 0))
+        ttk.Button(details, text="Like (L)", command=lambda: self._review_rate(1), style="Gold.TButton").pack(side=RIGHT)
+        window.bind("l", lambda _event: self._review_rate(1))
+        window.bind("m", lambda _event: self._review_rate(0))
+        window.bind("r", lambda _event: self._review_rate(-1))
+        window.bind("<Right>", lambda _event: self._review_next())
+        window.bind("<Left>", lambda _event: self._review_previous())
+        self._show_review_photo()
 
     def _load_large_preview(self, path: str, image_label: tk.Label) -> None:
         if Image is None or ImageTk is None:
@@ -752,13 +773,44 @@ class PhotoManagerApp(tk.Tk):
         except Exception:
             image_label.configure(text="Preview unavailable")
 
-    def _review_rate(self, window: tk.Toplevel, photo_id: int | None, rating: int) -> None:
+    def _review_rate(self, rating: int) -> None:
+        if not self.review_photos:
+            return
+        photo_id = self.review_photos[self.review_index].id
         if photo_id is None:
             return
         self.database.set_photo_rating(photo_id, rating)
         self._refresh_tables()
         self.status.set(f"Saved preference: {format_preference(rating)}.")
-        window.destroy()
+        if self.review_index < len(self.review_photos) - 1:
+            self.review_index += 1
+            self._show_review_photo()
+        elif self.review_window is not None:
+            self.review_window.destroy()
+
+    def _show_review_photo(self) -> None:
+        if not self.review_photos or self.review_image_label is None or self.review_detail_text is None:
+            return
+        photo = self.review_photos[self.review_index]
+        self._load_large_preview(photo.path, self.review_image_label)
+        self.review_detail_text.configure(
+            text=(
+                f"{self.review_index + 1}/{len(self.review_photos)}  {photo.filename}  "
+                f"Pref {format_preference(photo.user_rating) or '-'}  "
+                f"Score {format_score(photo.quality_score)}  Joy {format_score(photo.people_score)}  "
+                f"Wow {format_score(photo.scenery_score)}"
+            )
+        )
+
+    def _review_next(self) -> None:
+        if self.review_index < len(self.review_photos) - 1:
+            self.review_index += 1
+            self._show_review_photo()
+
+    def _review_previous(self) -> None:
+        if self.review_index > 0:
+            self.review_index -= 1
+            self._show_review_photo()
 
     def _resize_export_current_view(self) -> None:
         photos = self._current_export_photos()
@@ -782,6 +834,14 @@ class PhotoManagerApp(tk.Tk):
 
     def _current_export_photos(self):
         if self.notebook.select() == str(self.top_picks_tree.master):
+            return self.top_picks
+        library_root, paths = self._current_scope()
+        return self.database.list_photos(limit=1_000_000, library_root=library_root, paths=paths)
+
+    def _current_review_photos(self):
+        if self.notebook.select() == str(self.top_picks_tree.master):
+            if not self.top_picks:
+                self._refresh_top_picks(show_status=False)
             return self.top_picks
         library_root, paths = self._current_scope()
         return self.database.list_photos(limit=1_000_000, library_root=library_root, paths=paths)

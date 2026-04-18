@@ -14,6 +14,7 @@ from sanik_photo.duplicate_finder import (
 from sanik_photo.scanner import scan_folder
 from sanik_photo.models import PhotoRecord
 from sanik_photo.image_export import resize_photos
+from sanik_photo.image_loader import register_image_openers
 from sanik_photo.organizer import caption_for_photo, suggested_organization_path
 from sanik_photo.taste_model import load_taste_model, train_taste_model
 from sanik_photo.top_picks import select_top_picks
@@ -270,6 +271,9 @@ class ScannerTest(unittest.TestCase):
             self.assertEqual(len(resized), 1)
             with Image.open(resized[0]) as image:
                 self.assertLessEqual(max(image.size), 200)
+
+    def test_register_image_openers_is_safe(self) -> None:
+        register_image_openers()
 
     def test_hamming_distance(self) -> None:
         self.assertEqual(hamming_distance("ff", "ff"), 0)

@@ -30,6 +30,7 @@ is available on this machine.
 - Preview the selected image and open it in the Windows default photo app.
 - Review a selected photo in a larger window with quick Like/Maybe/Reject actions.
 - Resize photos in bulk into a separate output folder.
+- Preview and process HEIC files when `pillow-heif` is installed.
 - Move non-keeper duplicates to a review folder instead of deleting them.
 - Keep a record of file actions.
 
@@ -143,6 +144,11 @@ Original photos stay where they are.
   - `L`: Like
   - `M`: Maybe
   - `R`: Reject
+  - Right arrow: next photo
+  - Left arrow: previous photo
+- When you rate a photo in Large Review, the review advances to the next photo.
+  If opened from Top Picks, it reviews current Top Picks; otherwise it reviews
+  the current app view.
 - **Resize Export**: creates resized JPEG copies for the current view. If you are
   on the Top Picks tab, it resizes the current picks; otherwise it resizes photos
   in the selected app view. Originals stay untouched.
@@ -156,6 +162,7 @@ sanik_photo/
   duplicate_finder.py   Duplicate grouping and keeper suggestions
   file_actions.py       Safe file move operations
   image_export.py       Bulk resize/export helpers
+  image_loader.py       Shared image opener registration including HEIC
   organizer.py          Captions and folder-path suggestions
   quality.py            Local photo quality scoring
   scanner.py            Folder scanning and hashing
