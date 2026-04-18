@@ -22,6 +22,8 @@ is available on this machine.
 - Suggest one standout per duplicate or similar-photo group.
 - Pick the top 15 photos, plus any extra photos scoring 75 or higher.
 - Train a local taste model from Like, Maybe, and Reject labels.
+- Force a rescan/rescore of the selected folder after improving scoring logic or
+  installing image libraries.
 - View all indexed photos, only the selected folder, or only the last scan.
 - Clear all indexed records or only the selected folder's records.
 - Remove database records for files that no longer exist.
@@ -32,6 +34,7 @@ is available on this machine.
 - Resize photos in bulk into a separate output folder.
 - Preview and process HEIC files when `pillow-heif` is installed.
 - Move non-keeper duplicates to a review folder instead of deleting them.
+- Move unwanted photos to a deleted folder and count them as Reject feedback.
 - Keep a record of file actions.
 
 ## Run
@@ -129,6 +132,12 @@ Use **Train Model** after marking at least 2 liked and 2 rejected photos. The ap
 builds a small local taste model from your feedback and uses it to reorder future
 Top Picks. As you mark more photos, run **Train Model** again to refine it.
 
+The visible Top Picks score is calculated when the Top Picks table refreshes.
+The underlying photo measurements are stored during scanning. Use
+**Rescan / Rescore** after installing new image libraries or changing scoring
+logic. The trained taste model is stored in the app database and remains
+available when you scan or upload new folders.
+
 Use **Export Top Picks** to copy the current picks into:
 
 ```text
@@ -152,6 +161,10 @@ Original photos stay where they are.
 - **Resize Export**: creates resized JPEG copies for the current view. If you are
   on the Top Picks tab, it resizes the current picks; otherwise it resizes photos
   in the selected app view. Originals stay untouched.
+- **Delete / Reject**: moves the selected photo into `_sanik_photo_deleted`,
+  marks it Reject for training, and hides it from normal Library, duplicate, and
+  Top Picks views. The app skips its own `_sanik_photo_*` work folders during
+  scans so those moved files do not come back into active picks.
 
 ## Project Layout
 

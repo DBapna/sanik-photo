@@ -61,6 +61,7 @@ class ScannerTest(unittest.TestCase):
             self.assertIn("width", columns)
             self.assertIn("height", columns)
             self.assertIn("perceptual_hash", columns)
+            self.assertIn("is_deleted", columns)
 
     def test_scan_and_find_exact_duplicates(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -80,6 +81,40 @@ class ScannerTest(unittest.TestCase):
             self.assertEqual(len(groups), 1)
             self.assertEqual(len(groups[0].items), 2)
             self.assertEqual(groups[0].items[0].suggested_action, "keep")
+
+    def test_deleted_photo_is_hidden_but_kept_as_reject_feedback(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "delete-me.jpg"
+            target = root / "_sanik_photo_deleted" / "delete-me.jpg"
+            source.write_bytes(b"image")
+
+            db = PhotoDatabase(root / "test.sqlite3")
+            try:
+                db.upsert_photos(scan_folder(root))
+                photo = db.list_photos(limit=1)[0]
+                db.mark_photo_deleted(int(photo.id), str(target))
+                active = db.list_photos(limit=10)
+                rated = db.list_rated_photos()
+            finally:
+                db.close()
+
+            self.assertEqual(active, [])
+            self.assertEqual(len(rated), 1)
+            self.assertEqual(rated[0].user_rating, -1)
+            self.assertTrue(rated[0].is_deleted)
+
+    def test_scan_skips_sanik_work_folders(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            deleted = root / "_sanik_photo_deleted"
+            deleted.mkdir()
+            (root / "active.jpg").write_bytes(b"active")
+            (deleted / "deleted.jpg").write_bytes(b"deleted")
+
+            scanned = list(scan_folder(root))
+
+            self.assertEqual([photo.filename for photo in scanned], ["active.jpg"])
 
     def test_folder_scope_can_clear_one_library(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -231,6 +266,24 @@ class ScannerTest(unittest.TestCase):
 
             self.assertTrue(result.trained)
             self.assertIn("2 maybe", result.message)
+
+    def test_taste_model_setting_survives_new_scan(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            first = root / "first.jpg"
+            second = root / "second.jpg"
+            first.write_bytes(b"first")
+            db = PhotoDatabase(root / "test.sqlite3")
+            try:
+                db.save_setting("taste_model_v1", {"weights": {"quality": 1.0}})
+                db.upsert_photos(scan_folder(root))
+                second.write_bytes(b"second")
+                db.upsert_photos(scan_folder(root))
+                model = db.load_setting("taste_model_v1")
+            finally:
+                db.close()
+
+            self.assertEqual(model, {"weights": {"quality": 1.0}})
 
     def test_top_picks_expand_for_threshold(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -25,6 +25,7 @@ class PhotoRecord:
     face_count: int | None = None
     quality_score: float | None = None
     user_rating: int | None = None
+    is_deleted: bool = False
 
 
 @dataclass(frozen=True)

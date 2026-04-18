@@ -157,6 +157,7 @@ class PhotoManagerApp(tk.Tk):
 
         ttk.Button(top, text="Choose Folder", command=self._choose_folder).pack(side=LEFT)
         ttk.Label(top, textvariable=self.selected_folder, anchor=W, style="Path.TLabel").pack(side=LEFT, fill=X, expand=True, padx=12)
+        ttk.Button(top, text="Rescan / Rescore", command=self._rescan_selected_folder).pack(side=RIGHT, padx=(8, 0))
         ttk.Button(top, text="Scan Library", command=self._start_scan, style="Accent.TButton").pack(side=RIGHT)
 
         actions = ttk.Frame(shell, padding=(12, 10), style="Toolbar.TFrame")
@@ -176,6 +177,7 @@ class PhotoManagerApp(tk.Tk):
         ttk.Button(actions, text="Like", command=lambda: self._rate_selected_photo(1), style="Gold.TButton").pack(side=RIGHT)
         ttk.Button(actions, text="Maybe", command=lambda: self._rate_selected_photo(0)).pack(side=RIGHT, padx=(0, 8))
         ttk.Button(actions, text="No / Reject", command=lambda: self._rate_selected_photo(-1)).pack(side=RIGHT, padx=(0, 8))
+        ttk.Button(actions, text="Delete / Reject", command=self._delete_selected_photo).pack(side=RIGHT, padx=(0, 8))
 
         filters = ttk.Frame(shell, padding=(12, 0), style="Shell.TFrame")
         filters.pack(fill=X, pady=(0, 8))
@@ -324,6 +326,14 @@ class PhotoManagerApp(tk.Tk):
         thread = threading.Thread(target=self._scan_worker, args=(folder,), daemon=True)
         thread.start()
 
+    def _rescan_selected_folder(self) -> None:
+        folder = self.selected_folder.get()
+        if not folder:
+            messagebox.showinfo("Choose a folder", "Pick a photo folder first.")
+            return
+        self.status.set("Rescanning and refreshing photo scores...")
+        self._start_scan()
+
     def _scan_worker(self, folder: str) -> None:
         worker_database = PhotoDatabase(self.database.db_path)
         try:
@@ -464,6 +474,39 @@ class PhotoManagerApp(tk.Tk):
             return
         moved = move_review_duplicates(self.database, self.duplicate_groups, review_root)
         self.status.set(f"Moved {moved} files to review folder.")
+        self._refresh_tables()
+
+    def _delete_selected_photo(self) -> None:
+        photo_id = self._selected_photo_id()
+        if photo_id is None:
+            messagebox.showinfo("Select a photo", "Select one photo row first.")
+            return
+        photo = self.database.get_photo(photo_id)
+        if photo is None:
+            messagebox.showinfo("Select a photo", "This photo is no longer active in the library.")
+            return
+        source = Path(photo.path)
+        if not source.exists():
+            self.database.set_photo_rating(photo_id, -1, "Rejected because file was already missing")
+            self.status.set("Marked missing photo as Reject.")
+            self._refresh_tables()
+            return
+        deleted_root = Path(photo.library_root or self.selected_folder.get() or source.parent) / "_sanik_photo_deleted"
+        target = unique_target(deleted_root / source.name)
+        confirm = messagebox.askyesno(
+            "Delete and reject",
+            (
+                "Move this photo to the app's deleted folder and mark it as Reject?\n\n"
+                f"From: {source}\n\nTo: {target}\n\n"
+                "This removes it from normal views and keeps the Reject label for model training."
+            ),
+        )
+        if not confirm:
+            return
+        deleted_root.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(source), str(target))
+        self.database.mark_photo_deleted(photo_id, str(target))
+        self.status.set(f"Moved to deleted folder and marked Reject: {target.name}")
         self._refresh_tables()
 
     def _current_scope(self) -> tuple[str | None, set[str] | None]:

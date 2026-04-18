@@ -47,6 +47,7 @@ class PhotoDatabase:
                 face_count INTEGER,
                 quality_score REAL,
                 user_rating INTEGER,
+                is_deleted INTEGER NOT NULL DEFAULT 0,
                 scanned_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
@@ -112,6 +113,7 @@ class PhotoDatabase:
         self._ensure_column("photos", "face_count", "INTEGER")
         self._ensure_column("photos", "quality_score", "REAL")
         self._ensure_column("photos", "user_rating", "INTEGER")
+        self._ensure_column("photos", "is_deleted", "INTEGER NOT NULL DEFAULT 0")
         self.connection.executescript(
             """
             CREATE INDEX IF NOT EXISTS idx_photos_sha256 ON photos(sha256);
@@ -135,9 +137,9 @@ class PhotoDatabase:
                 library_root, path, filename, extension, file_size, modified_at, sha256,
                 width, height, perceptual_hash, sharpness_score, lighting_score,
                 composition_score, expression_score, people_score, scenery_score,
-                face_count, quality_score, user_rating
+                face_count, quality_score, user_rating, is_deleted
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(path) DO UPDATE SET
                 library_root=excluded.library_root,
                 filename=excluded.filename,
@@ -157,6 +159,7 @@ class PhotoDatabase:
                 face_count=excluded.face_count,
                 quality_score=excluded.quality_score,
                 user_rating=COALESCE(photos.user_rating, excluded.user_rating),
+                is_deleted=0,
                 scanned_at=CURRENT_TIMESTAMP
             RETURNING id
             """,
@@ -180,6 +183,7 @@ class PhotoDatabase:
                 photo.face_count,
                 photo.quality_score,
                 photo.user_rating,
+                1 if photo.is_deleted else 0,
             ),
         )
         row = cursor.fetchone()
@@ -205,7 +209,7 @@ class PhotoDatabase:
             SELECT id, path, filename, extension, file_size, modified_at, sha256,
                    library_root, width, height, perceptual_hash, sharpness_score,
                    lighting_score, composition_score, expression_score, people_score,
-                   scenery_score, face_count, quality_score, user_rating
+                   scenery_score, face_count, quality_score, user_rating, is_deleted
             FROM photos
             {where}
             ORDER BY modified_at DESC
@@ -298,7 +302,7 @@ class PhotoDatabase:
             SELECT id, path, filename, extension, file_size, modified_at, sha256,
                    library_root, width, height, perceptual_hash, sharpness_score,
                    lighting_score, composition_score, expression_score, people_score,
-                   scenery_score, face_count, quality_score, user_rating
+                   scenery_score, face_count, quality_score, user_rating, is_deleted
             FROM photos
             {where}
             ORDER BY modified_at ASC, path ASC
@@ -312,7 +316,7 @@ class PhotoDatabase:
             """
             SELECT library_root
             FROM photos
-            WHERE library_root != ''
+            WHERE library_root != '' AND is_deleted = 0
             GROUP BY library_root
             ORDER BY library_root ASC
             """
@@ -325,16 +329,16 @@ class PhotoDatabase:
             SELECT id, path, filename, extension, file_size, modified_at, sha256,
                    library_root, width, height, perceptual_hash, sharpness_score,
                    lighting_score, composition_score, expression_score, people_score,
-                   scenery_score, face_count, quality_score, user_rating
+                   scenery_score, face_count, quality_score, user_rating, is_deleted
             FROM photos
-            WHERE id = ?
+            WHERE id = ? AND is_deleted = 0
             """,
             (photo_id,),
         ).fetchone()
         return self._photo_from_row(row) if row else None
 
     def get_photo_id_by_path(self, path: str) -> int | None:
-        row = self.connection.execute("SELECT id FROM photos WHERE path = ?", (path,)).fetchone()
+        row = self.connection.execute("SELECT id FROM photos WHERE path = ? AND is_deleted = 0", (path,)).fetchone()
         return int(row["id"]) if row else None
 
     def add_people_to_photo(self, photo_id: int, names: list[str]) -> None:
@@ -417,13 +421,42 @@ class PhotoDatabase:
         )
         self.connection.commit()
 
+    def mark_photo_deleted(self, photo_id: int, target_path: str, note: str | None = None) -> None:
+        photo = self.get_photo(photo_id)
+        if photo is None:
+            return
+        target = Path(target_path)
+        self.connection.execute(
+            """
+            UPDATE photos
+            SET path = ?, filename = ?, user_rating = -1, is_deleted = 1
+            WHERE id = ?
+            """,
+            (str(target), target.name, photo_id),
+        )
+        self.connection.execute(
+            """
+            INSERT INTO photo_feedback(photo_id, rating, note)
+            VALUES (?, ?, ?)
+            """,
+            (photo_id, -1, note or "Deleted from app"),
+        )
+        self.connection.execute(
+            """
+            INSERT INTO file_actions(photo_id, action, source_path, target_path)
+            VALUES (?, ?, ?, ?)
+            """,
+            (photo_id, "move_to_deleted", photo.path, str(target)),
+        )
+        self.connection.commit()
+
     def list_rated_photos(self) -> list[PhotoRecord]:
         rows = self.connection.execute(
             """
             SELECT id, path, filename, extension, file_size, modified_at, sha256,
                    library_root, width, height, perceptual_hash, sharpness_score,
                    lighting_score, composition_score, expression_score, people_score,
-                   scenery_score, face_count, quality_score, user_rating
+                   scenery_score, face_count, quality_score, user_rating, is_deleted
             FROM photos
             WHERE user_rating IS NOT NULL
             ORDER BY modified_at DESC
@@ -501,8 +534,9 @@ class PhotoDatabase:
         paths: set[str] | None = None,
         extra_clause: str | None = None,
         extra_params: tuple[object, ...] = (),
+        include_deleted: bool = False,
     ) -> tuple[str, tuple[object, ...]]:
-        clauses: list[str] = []
+        clauses: list[str] = [] if include_deleted else ["is_deleted = 0"]
         params: list[object] = []
         if library_root:
             clauses.append("library_root = ?")
@@ -544,4 +578,5 @@ class PhotoDatabase:
             face_count=int(row["face_count"]) if row["face_count"] is not None else None,
             quality_score=float(row["quality_score"]) if row["quality_score"] is not None else None,
             user_rating=int(row["user_rating"]) if row["user_rating"] is not None else None,
+            is_deleted=bool(row["is_deleted"]) if "is_deleted" in row.keys() else False,
         )

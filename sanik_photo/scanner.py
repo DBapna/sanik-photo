@@ -28,6 +28,7 @@ SUPPORTED_EXTENSIONS = {
     ".heic",
     ".heif",
 }
+SKIP_DIR_NAMES = {"_sanik_photo_deleted", "_sanik_photo_review", "_sanik_photo_top_picks"}
 
 ProgressCallback = Callable[[str], None]
 
@@ -40,6 +41,8 @@ def scan_folder(folder: Path | str, progress: ProgressCallback | None = None) ->
         raise NotADirectoryError(f"Path is not a folder: {root}")
 
     for path in root.rglob("*"):
+        if any(part in SKIP_DIR_NAMES for part in path.relative_to(root).parts[:-1]):
+            continue
         if not path.is_file() or path.suffix.lower() not in SUPPORTED_EXTENSIONS:
             continue
         if progress:
