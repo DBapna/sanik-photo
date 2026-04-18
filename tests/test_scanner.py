@@ -208,7 +208,29 @@ class ScannerTest(unittest.TestCase):
                 db.close()
 
             self.assertFalse(result.trained)
-            self.assertIn("2 liked and 2 rejected", result.message)
+            self.assertIn("2 liked photos and 2 not-top-pick photos", result.message)
+
+    @unittest.skipIf(Image is None, "Pillow is not installed")
+    def test_taste_model_uses_maybe_as_weak_negative(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            for index, color in enumerate(("white", "lightgray", "gray", "dimgray")):
+                Image.new("RGB", (160, 160), color).save(root / f"{index}.jpg")
+
+            db = PhotoDatabase(root / "test.sqlite3")
+            try:
+                db.upsert_photos(scan_folder(root))
+                photos = {photo.filename: photo for photo in db.list_photos(limit=10)}
+                db.set_photo_rating(int(photos["0.jpg"].id), 1)
+                db.set_photo_rating(int(photos["1.jpg"].id), 1)
+                db.set_photo_rating(int(photos["2.jpg"].id), 0)
+                db.set_photo_rating(int(photos["3.jpg"].id), 0)
+                result = train_taste_model(db)
+            finally:
+                db.close()
+
+            self.assertTrue(result.trained)
+            self.assertIn("2 maybe", result.message)
 
     def test_top_picks_expand_for_threshold(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

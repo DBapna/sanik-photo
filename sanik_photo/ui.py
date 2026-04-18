@@ -175,7 +175,7 @@ class PhotoManagerApp(tk.Tk):
         ttk.Button(actions, text="Train Model", command=self._train_taste_model).pack(side=LEFT, padx=(8, 0))
         ttk.Button(actions, text="Like", command=lambda: self._rate_selected_photo(1), style="Gold.TButton").pack(side=RIGHT)
         ttk.Button(actions, text="Maybe", command=lambda: self._rate_selected_photo(0)).pack(side=RIGHT, padx=(0, 8))
-        ttk.Button(actions, text="Reject", command=lambda: self._rate_selected_photo(-1)).pack(side=RIGHT, padx=(0, 8))
+        ttk.Button(actions, text="No / Reject", command=lambda: self._rate_selected_photo(-1)).pack(side=RIGHT, padx=(0, 8))
 
         filters = ttk.Frame(shell, padding=(12, 0), style="Shell.TFrame")
         filters.pack(fill=X, pady=(0, 8))
@@ -750,7 +750,7 @@ class PhotoManagerApp(tk.Tk):
         detail_label.pack(side=LEFT, fill=X, expand=True)
         ttk.Button(details, text="Previous", command=self._review_previous).pack(side=RIGHT, padx=(8, 0))
         ttk.Button(details, text="Next", command=self._review_next).pack(side=RIGHT, padx=(8, 0))
-        ttk.Button(details, text="Reject (R)", command=lambda: self._review_rate(-1)).pack(side=RIGHT, padx=(8, 0))
+        ttk.Button(details, text="No / Reject (R)", command=lambda: self._review_rate(-1)).pack(side=RIGHT, padx=(8, 0))
         ttk.Button(details, text="Maybe (M)", command=lambda: self._review_rate(0)).pack(side=RIGHT, padx=(8, 0))
         ttk.Button(details, text="Like (L)", command=lambda: self._review_rate(1), style="Gold.TButton").pack(side=RIGHT)
         window.bind("l", lambda _event: self._review_rate(1))

@@ -32,16 +32,25 @@ class TasteModelResult:
 def train_taste_model(database: PhotoDatabase) -> TasteModelResult:
     rated = database.list_rated_photos()
     liked = [photo for photo in rated if photo.user_rating == 1]
+    maybe = [photo for photo in rated if photo.user_rating == 0]
     rejected = [photo for photo in rated if photo.user_rating == -1]
+    not_liked = rejected + maybe
 
-    if len(liked) < 2 or len(rejected) < 2:
+    if len(liked) < 2 or len(not_liked) < 2:
         return TasteModelResult(
             trained=False,
-            message="Mark at least 2 liked and 2 rejected photos to train the taste model.",
+            message=(
+                "Mark at least 2 liked photos and 2 not-top-pick photos "
+                f"to train the taste model. Current: {len(liked)} liked, "
+                f"{len(maybe)} maybe, {len(rejected)} rejected."
+            ),
         )
 
     positive_mean = mean_vector([feature_vector(photo) for photo in liked])
-    negative_mean = mean_vector([feature_vector(photo) for photo in rejected])
+    negative_mean = weighted_mean_vector(
+        [(feature_vector(photo), 1.0) for photo in rejected]
+        + [(feature_vector(photo), 0.45) for photo in maybe]
+    )
     weights = [positive - negative for positive, negative in zip(positive_mean, negative_mean)]
     midpoint = [(positive + negative) / 2 for positive, negative in zip(positive_mean, negative_mean)]
     intercept = -sum(weight * value for weight, value in zip(weights, midpoint))
@@ -52,13 +61,17 @@ def train_taste_model(database: PhotoDatabase) -> TasteModelResult:
         "weights": weights,
         "intercept": intercept,
         "liked_count": len(liked),
+        "maybe_count": len(maybe),
         "rejected_count": len(rejected),
         "trained_at": time(),
     }
     database.save_setting(MODEL_SETTING_KEY, model)
     return TasteModelResult(
         trained=True,
-        message=f"Trained taste model from {len(liked)} liked and {len(rejected)} rejected photos.",
+        message=(
+            f"Trained taste model from {len(liked)} liked, "
+            f"{len(maybe)} maybe, and {len(rejected)} rejected photos."
+        ),
         model=model,
     )
 
@@ -116,6 +129,14 @@ def feature_vector(photo: PhotoRecord) -> list[float]:
 
 def mean_vector(vectors: list[list[float]]) -> list[float]:
     return [sum(vector[index] for vector in vectors) / len(vectors) for index in range(len(vectors[0]))]
+
+
+def weighted_mean_vector(weighted_vectors: list[tuple[list[float], float]]) -> list[float]:
+    total_weight = sum(weight for _vector, weight in weighted_vectors) or 1.0
+    return [
+        sum(vector[index] * weight for vector, weight in weighted_vectors) / total_weight
+        for index in range(len(weighted_vectors[0][0]))
+    ]
 
 
 def safe_score(value: float | None) -> float:
