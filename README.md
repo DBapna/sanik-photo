@@ -17,9 +17,9 @@ is available on this machine.
 - Store the photo library in SQLite.
 - Detect exact duplicates using SHA-256 file hashes.
 - Detect reduced or lightly compressed copies when Pillow is installed.
-- Score photos for sharpness, lighting, composition, and overall quality.
+- Score photos for sharpness, lighting, composition, smile, and overall quality.
 - Suggest one standout per duplicate or similar-photo group.
-- Pick the top 15 photos from the current view while avoiding near-duplicate moments.
+- Pick the top 15 photos, plus any extra photos scoring 75 or higher.
 - Train a local taste model from Like, Maybe, and Reject labels.
 - View all indexed photos, only the selected folder, or only the last scan.
 - Clear all indexed records or only the selected folder's records.
@@ -57,9 +57,12 @@ dimensions, perceptual hashes, and local quality scores:
 - **Sharp**: edge-detail based sharpness estimate.
 - **Light**: brightness, contrast, and clipping estimate.
 - **Comp**: simple composition estimate based on visual energy and balance.
+- **Smile**: local OpenCV-based face/smile estimate when a natural-looking smile
+  is detected.
 
-Expression scoring is reserved for a future local face-analysis model. For now,
-the app leaves expression neutral and does not upload photos anywhere.
+Smile scoring runs locally with OpenCV. If no face/smile is detected, the field
+stays blank. Rescan folders after installing dependencies to populate new Smile
+scores. The app does not upload photos anywhere.
 
 ## Library Views and Cleanup
 
@@ -101,8 +104,10 @@ Use the **Top Picks** tab to review the best photos from the current view:
 - **All indexed**: picks from everything in the app database.
 
 The picker first chooses the standout from each similar-photo group, then fills
-the remaining slots by overall quality score. This helps avoid selecting many
-near-identical versions of the same moment.
+the remaining slots by overall quality score. It always includes the best 15
+photos, and if more photos score 75 or higher, it includes those too. This helps
+avoid selecting many near-identical versions of the same moment while still
+letting strong albums grow beyond 15.
 
 Use **Like**, **Maybe**, and **Reject** on selected photos to teach the picker.
 Liked photos move up, rejected photos move down, and the feedback is stored

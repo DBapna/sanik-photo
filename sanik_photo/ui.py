@@ -22,7 +22,7 @@ from .models import DuplicateGroup
 from .organizer import caption_for_photo, suggested_organization_path
 from .scanner import scan_folder
 from .taste_model import load_taste_model, train_taste_model
-from .top_picks import DEFAULT_PICK_COUNT, select_top_picks
+from .top_picks import DEFAULT_PICK_COUNT, DEFAULT_SCORE_THRESHOLD, select_top_picks
 
 
 SANIK_LOGO_PATH = Path(
@@ -182,29 +182,29 @@ class PhotoManagerApp(tk.Tk):
 
         self.photos_tree = self._make_tree(
             self.notebook,
-            ("filename", "pref", "score", "sharp", "light", "comp", "size", "modified", "path"),
-            ("Filename", "Pref", "Score", "Sharp", "Light", "Comp", "Size", "Modified", "Path"),
+            ("filename", "pref", "score", "sharp", "light", "comp", "smile", "size", "modified", "path"),
+            ("Filename", "Pref", "Score", "Sharp", "Light", "Comp", "Smile", "Size", "Modified", "Path"),
         )
         self.notebook.add(self.photos_tree.master, text="Library")
 
         self.duplicates_tree = self._make_tree(
             self.notebook,
-            ("group", "action", "pref", "score", "sharp", "light", "comp", "filename", "size", "path"),
-            ("Group", "Suggestion", "Pref", "Score", "Sharp", "Light", "Comp", "Filename", "Size", "Path"),
+            ("group", "action", "pref", "score", "sharp", "light", "comp", "smile", "filename", "size", "path"),
+            ("Group", "Suggestion", "Pref", "Score", "Sharp", "Light", "Comp", "Smile", "Filename", "Size", "Path"),
         )
         self.notebook.add(self.duplicates_tree.master, text="Exact Duplicates")
 
         self.similar_tree = self._make_tree(
             self.notebook,
-            ("group", "action", "pref", "score", "sharp", "light", "comp", "filename", "size", "path"),
-            ("Group", "Suggestion", "Pref", "Score", "Sharp", "Light", "Comp", "Filename", "Size", "Path"),
+            ("group", "action", "pref", "score", "sharp", "light", "comp", "smile", "filename", "size", "path"),
+            ("Group", "Suggestion", "Pref", "Score", "Sharp", "Light", "Comp", "Smile", "Filename", "Size", "Path"),
         )
         self.notebook.add(self.similar_tree.master, text="Similar Photos")
 
         self.top_picks_tree = self._make_tree(
             self.notebook,
-            ("rank", "pref", "score", "sharp", "light", "comp", "filename", "size", "path"),
-            ("Rank", "Pref", "Score", "Sharp", "Light", "Comp", "Filename", "Size", "Path"),
+            ("rank", "pref", "score", "sharp", "light", "comp", "smile", "filename", "size", "path"),
+            ("Rank", "Pref", "Score", "Sharp", "Light", "Comp", "Smile", "Filename", "Size", "Path"),
         )
         self.notebook.add(self.top_picks_tree.master, text="Top Picks")
 
@@ -276,7 +276,7 @@ class PhotoManagerApp(tk.Tk):
                 width = 420
             elif column == "filename":
                 width = 220
-            elif column in {"pref", "score", "sharp", "light", "comp"}:
+            elif column in {"pref", "score", "sharp", "light", "comp", "smile"}:
                 width = 70
             elif column == "action":
                 width = 110
@@ -356,6 +356,7 @@ class PhotoManagerApp(tk.Tk):
                     format_score(photo.sharpness_score),
                     format_score(photo.lighting_score),
                     format_score(photo.composition_score),
+                    format_score(photo.expression_score),
                     format_bytes(photo.file_size),
                     format_timestamp(photo.modified_at),
                     photo.path,
@@ -379,6 +380,7 @@ class PhotoManagerApp(tk.Tk):
                         format_score(item.sharpness_score),
                         format_score(item.lighting_score),
                         format_score(item.composition_score),
+                        format_score(item.expression_score),
                         item.filename,
                         format_bytes(item.file_size),
                         item.path,
@@ -406,6 +408,7 @@ class PhotoManagerApp(tk.Tk):
                         format_score(item.sharpness_score),
                         format_score(item.lighting_score),
                         format_score(item.composition_score),
+                        format_score(item.expression_score),
                         item.filename,
                         format_bytes(item.file_size),
                         item.path,
@@ -612,14 +615,19 @@ class PhotoManagerApp(tk.Tk):
                     format_score(photo.sharpness_score),
                     format_score(photo.lighting_score),
                     format_score(photo.composition_score),
+                    format_score(photo.expression_score),
                     photo.filename,
                     format_bytes(photo.file_size),
                     photo.path,
                 ),
             )
         if show_status:
+            threshold = round(DEFAULT_SCORE_THRESHOLD * 100)
             model_note = "taste model on" if load_taste_model(self.database) else "heuristics only"
-            self.status.set(f"Selected {len(self.top_picks)} top picks for the current view ({model_note}).")
+            self.status.set(
+                f"Selected {len(self.top_picks)} top picks "
+                f"(best {DEFAULT_PICK_COUNT} plus any scoring {threshold}+, {model_note})."
+            )
 
     def _export_top_picks(self) -> None:
         if not self.top_picks:

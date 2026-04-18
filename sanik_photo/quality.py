@@ -11,6 +11,13 @@ except ImportError:
     ImageOps = None
     ImageStat = None
 
+try:
+    import cv2
+    import numpy as np
+except ImportError:
+    cv2 = None
+    np = None
+
 
 @dataclass(frozen=True)
 class QualityScores:
@@ -33,10 +40,12 @@ def score_image(image: "Image.Image") -> QualityScores:
     sharpness = sharpness_score(grayscale)
     lighting = lighting_score(grayscale)
     composition = composition_score(grayscale)
-    expression = None
+    expression = smile_expression_score(thumbnail)
 
-    # Expression stays neutral until local face/eye analysis is added.
-    overall = (sharpness * 0.42) + (lighting * 0.33) + (composition * 0.25)
+    if expression is None:
+        overall = (sharpness * 0.42) + (lighting * 0.33) + (composition * 0.25)
+    else:
+        overall = (sharpness * 0.34) + (lighting * 0.27) + (composition * 0.20) + (expression * 0.19)
     return QualityScores(
         sharpness=round(sharpness, 3),
         lighting=round(lighting, 3),
@@ -96,6 +105,46 @@ def composition_score(grayscale: "Image.Image") -> float:
     balance = horizontal_balance_score(pixels, width, height)
 
     return clamp((focus_score * 0.55) + (balance * 0.35) + 0.15 - (border_penalty * 0.25))
+
+
+def smile_expression_score(image: "Image.Image") -> float | None:
+    if cv2 is None or np is None:
+        return None
+
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+    smile_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_smile.xml")
+    if face_cascade.empty() or smile_cascade.empty():
+        return None
+
+    cv_image = cv2.cvtColor(np.array(image.convert("RGB")), cv2.COLOR_RGB2BGR)
+    gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(36, 36))
+    if len(faces) == 0:
+        return None
+
+    scores: list[float] = []
+    image_area = gray.shape[0] * gray.shape[1]
+    for x, y, width, height in faces:
+        face_gray = gray[y : y + height, x : x + width]
+        lower_face = face_gray[height // 2 :, :]
+        smiles = smile_cascade.detectMultiScale(
+            lower_face,
+            scaleFactor=1.7,
+            minNeighbors=18,
+            minSize=(max(18, width // 5), max(8, height // 12)),
+        )
+        if len(smiles) == 0:
+            scores.append(0.25)
+            continue
+
+        best = max(smiles, key=lambda smile: smile[2] * smile[3])
+        smile_width_ratio = best[2] / width
+        face_area_ratio = (width * height) / image_area
+        natural_width = 1 - abs(smile_width_ratio - 0.42) / 0.42
+        face_size_score = clamp(face_area_ratio * 8)
+        scores.append(clamp((natural_width * 0.75) + (face_size_score * 0.25)))
+
+    return round(max(scores), 3)
 
 
 def horizontal_balance_score(pixels: list[int], width: int, height: int) -> float:

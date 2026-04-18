@@ -12,6 +12,7 @@ from sanik_photo.duplicate_finder import (
     hamming_distance,
 )
 from sanik_photo.scanner import scan_folder
+from sanik_photo.models import PhotoRecord
 from sanik_photo.organizer import caption_for_photo, suggested_organization_path
 from sanik_photo.taste_model import load_taste_model, train_taste_model
 from sanik_photo.top_picks import select_top_picks
@@ -206,6 +207,40 @@ class ScannerTest(unittest.TestCase):
 
             self.assertFalse(result.trained)
             self.assertIn("2 liked and 2 rejected", result.message)
+
+    def test_top_picks_expand_for_threshold(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            db = PhotoDatabase(root / "test.sqlite3")
+            try:
+                for index, score in enumerate((0.95, 0.90, 0.40)):
+                    db.upsert_photo(
+                        PhotoRecord(
+                            id=None,
+                            library_root=str(root.resolve()),
+                            path=str(root / f"{index}.jpg"),
+                            filename=f"{index}.jpg",
+                            extension=".jpg",
+                            file_size=100 + index,
+                            modified_at=float(index),
+                            sha256=f"hash-{index}",
+                            quality_score=score,
+                            sharpness_score=score,
+                            lighting_score=score,
+                            composition_score=score,
+                            expression_score=score,
+                        )
+                    )
+                picks = select_top_picks(
+                    db,
+                    count=1,
+                    score_threshold=0.75,
+                    library_root=str(root.resolve()),
+                )
+            finally:
+                db.close()
+
+            self.assertEqual([photo.filename for photo in picks], ["0.jpg", "1.jpg"])
 
     def test_hamming_distance(self) -> None:
         self.assertEqual(hamming_distance("ff", "ff"), 0)

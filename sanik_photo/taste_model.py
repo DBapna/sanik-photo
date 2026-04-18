@@ -14,6 +14,7 @@ FEATURE_NAMES = (
     "sharpness",
     "lighting",
     "composition",
+    "expression",
     "megapixels",
     "file_size",
 )
@@ -103,6 +104,7 @@ def feature_vector(photo: PhotoRecord) -> list[float]:
         safe_score(photo.sharpness_score),
         safe_score(photo.lighting_score),
         safe_score(photo.composition_score),
+        safe_score(photo.expression_score),
         megapixels,
         file_size,
     ]

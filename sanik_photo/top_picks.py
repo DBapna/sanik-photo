@@ -7,11 +7,13 @@ from .taste_model import blended_photo_score, load_taste_model
 
 
 DEFAULT_PICK_COUNT = 15
+DEFAULT_SCORE_THRESHOLD = 0.75
 
 
 def select_top_picks(
     database: PhotoDatabase,
     count: int = DEFAULT_PICK_COUNT,
+    score_threshold: float = DEFAULT_SCORE_THRESHOLD,
     library_root: str | None = None,
     paths: set[str] | None = None,
 ) -> list[PhotoRecord]:
@@ -40,7 +42,15 @@ def select_top_picks(
     ]
     selected.extend(sorted(remaining, key=lambda photo: photo_rank_key(photo, taste_model)))
 
-    return sorted(selected, key=lambda photo: photo_rank_key(photo, taste_model))[:count]
+    ranked = sorted(selected, key=lambda photo: photo_rank_key(photo, taste_model))
+    required_ids = {photo.id for photo in ranked[:count]}
+    threshold_ids = {
+        photo.id
+        for photo in ranked
+        if adjusted_quality(photo, taste_model) >= score_threshold
+    }
+    keep_ids = required_ids | threshold_ids
+    return [photo for photo in ranked if photo.id in keep_ids]
 
 
 def photo_rank_key(photo: PhotoRecord, taste_model: dict | None = None) -> tuple[float, int, float, str]:
