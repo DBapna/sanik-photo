@@ -13,6 +13,7 @@ from sanik_photo.duplicate_finder import (
 )
 from sanik_photo.scanner import scan_folder
 from sanik_photo.models import PhotoRecord
+from sanik_photo.image_export import resize_photos
 from sanik_photo.organizer import caption_for_photo, suggested_organization_path
 from sanik_photo.taste_model import load_taste_model, train_taste_model
 from sanik_photo.top_picks import select_top_picks
@@ -229,6 +230,8 @@ class ScannerTest(unittest.TestCase):
                             lighting_score=score,
                             composition_score=score,
                             expression_score=score,
+                            people_score=score,
+                            scenery_score=score,
                         )
                     )
                 picks = select_top_picks(
@@ -241,6 +244,32 @@ class ScannerTest(unittest.TestCase):
                 db.close()
 
             self.assertEqual([photo.filename for photo in picks], ["0.jpg", "1.jpg"])
+
+    @unittest.skipIf(Image is None, "Pillow is not installed")
+    def test_resize_photos_writes_smaller_copy(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "source.jpg"
+            output = root / "out"
+            Image.new("RGB", (800, 600), "navy").save(source)
+            photo = PhotoRecord(
+                id=1,
+                library_root=str(root),
+                path=str(source),
+                filename=source.name,
+                extension=".jpg",
+                file_size=source.stat().st_size,
+                modified_at=source.stat().st_mtime,
+                sha256="resize-test",
+            )
+
+            count = resize_photos([photo], output, max_width=200, max_height=200)
+            resized = list(output.glob("*.jpg"))
+
+            self.assertEqual(count, 1)
+            self.assertEqual(len(resized), 1)
+            with Image.open(resized[0]) as image:
+                self.assertLessEqual(max(image.size), 200)
 
     def test_hamming_distance(self) -> None:
         self.assertEqual(hamming_distance("ff", "ff"), 0)

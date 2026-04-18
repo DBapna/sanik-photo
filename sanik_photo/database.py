@@ -42,6 +42,9 @@ class PhotoDatabase:
                 lighting_score REAL,
                 composition_score REAL,
                 expression_score REAL,
+                people_score REAL,
+                scenery_score REAL,
+                face_count INTEGER,
                 quality_score REAL,
                 user_rating INTEGER,
                 scanned_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -104,6 +107,9 @@ class PhotoDatabase:
         self._ensure_column("photos", "lighting_score", "REAL")
         self._ensure_column("photos", "composition_score", "REAL")
         self._ensure_column("photos", "expression_score", "REAL")
+        self._ensure_column("photos", "people_score", "REAL")
+        self._ensure_column("photos", "scenery_score", "REAL")
+        self._ensure_column("photos", "face_count", "INTEGER")
         self._ensure_column("photos", "quality_score", "REAL")
         self._ensure_column("photos", "user_rating", "INTEGER")
         self.connection.executescript(
@@ -128,9 +134,10 @@ class PhotoDatabase:
             INSERT INTO photos(
                 library_root, path, filename, extension, file_size, modified_at, sha256,
                 width, height, perceptual_hash, sharpness_score, lighting_score,
-                composition_score, expression_score, quality_score, user_rating
+                composition_score, expression_score, people_score, scenery_score,
+                face_count, quality_score, user_rating
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(path) DO UPDATE SET
                 library_root=excluded.library_root,
                 filename=excluded.filename,
@@ -145,6 +152,9 @@ class PhotoDatabase:
                 lighting_score=excluded.lighting_score,
                 composition_score=excluded.composition_score,
                 expression_score=excluded.expression_score,
+                people_score=excluded.people_score,
+                scenery_score=excluded.scenery_score,
+                face_count=excluded.face_count,
                 quality_score=excluded.quality_score,
                 user_rating=COALESCE(photos.user_rating, excluded.user_rating),
                 scanned_at=CURRENT_TIMESTAMP
@@ -165,6 +175,9 @@ class PhotoDatabase:
                 photo.lighting_score,
                 photo.composition_score,
                 photo.expression_score,
+                photo.people_score,
+                photo.scenery_score,
+                photo.face_count,
                 photo.quality_score,
                 photo.user_rating,
             ),
@@ -191,8 +204,8 @@ class PhotoDatabase:
             f"""
             SELECT id, path, filename, extension, file_size, modified_at, sha256,
                    library_root, width, height, perceptual_hash, sharpness_score,
-                   lighting_score, composition_score, expression_score, quality_score,
-                   user_rating
+                   lighting_score, composition_score, expression_score, people_score,
+                   scenery_score, face_count, quality_score, user_rating
             FROM photos
             {where}
             ORDER BY modified_at DESC
@@ -237,7 +250,8 @@ class PhotoDatabase:
             f"""
             SELECT id, library_root, path, filename, file_size, modified_at, sha256,
                    sharpness_score, lighting_score, composition_score,
-                   expression_score, quality_score, user_rating
+                   expression_score, people_score, scenery_score, face_count,
+                   quality_score, user_rating
             FROM photos
             {where}
             ORDER BY COALESCE(quality_score, -1) DESC, file_size DESC, modified_at ASC, path ASC
@@ -260,6 +274,9 @@ class PhotoDatabase:
                     lighting_score=float(row["lighting_score"]) if row["lighting_score"] is not None else None,
                     composition_score=float(row["composition_score"]) if row["composition_score"] is not None else None,
                     expression_score=float(row["expression_score"]) if row["expression_score"] is not None else None,
+                    people_score=float(row["people_score"]) if row["people_score"] is not None else None,
+                    scenery_score=float(row["scenery_score"]) if row["scenery_score"] is not None else None,
+                    face_count=int(row["face_count"]) if row["face_count"] is not None else None,
                     user_rating=int(row["user_rating"]) if row["user_rating"] is not None else None,
                     suggested_action="keep" if index == 0 else "review",
                 )
@@ -280,8 +297,8 @@ class PhotoDatabase:
             f"""
             SELECT id, path, filename, extension, file_size, modified_at, sha256,
                    library_root, width, height, perceptual_hash, sharpness_score,
-                   lighting_score, composition_score, expression_score, quality_score,
-                   user_rating
+                   lighting_score, composition_score, expression_score, people_score,
+                   scenery_score, face_count, quality_score, user_rating
             FROM photos
             {where}
             ORDER BY modified_at ASC, path ASC
@@ -307,8 +324,8 @@ class PhotoDatabase:
             """
             SELECT id, path, filename, extension, file_size, modified_at, sha256,
                    library_root, width, height, perceptual_hash, sharpness_score,
-                   lighting_score, composition_score, expression_score, quality_score,
-                   user_rating
+                   lighting_score, composition_score, expression_score, people_score,
+                   scenery_score, face_count, quality_score, user_rating
             FROM photos
             WHERE id = ?
             """,
@@ -405,8 +422,8 @@ class PhotoDatabase:
             """
             SELECT id, path, filename, extension, file_size, modified_at, sha256,
                    library_root, width, height, perceptual_hash, sharpness_score,
-                   lighting_score, composition_score, expression_score, quality_score,
-                   user_rating
+                   lighting_score, composition_score, expression_score, people_score,
+                   scenery_score, face_count, quality_score, user_rating
             FROM photos
             WHERE user_rating IS NOT NULL
             ORDER BY modified_at DESC
@@ -522,6 +539,9 @@ class PhotoDatabase:
             lighting_score=float(row["lighting_score"]) if row["lighting_score"] is not None else None,
             composition_score=float(row["composition_score"]) if row["composition_score"] is not None else None,
             expression_score=float(row["expression_score"]) if row["expression_score"] is not None else None,
+            people_score=float(row["people_score"]) if row["people_score"] is not None else None,
+            scenery_score=float(row["scenery_score"]) if row["scenery_score"] is not None else None,
+            face_count=int(row["face_count"]) if row["face_count"] is not None else None,
             quality_score=float(row["quality_score"]) if row["quality_score"] is not None else None,
             user_rating=int(row["user_rating"]) if row["user_rating"] is not None else None,
         )

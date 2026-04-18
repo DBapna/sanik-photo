@@ -20,6 +20,9 @@ class PhotoRecord:
     lighting_score: float | None = None
     composition_score: float | None = None
     expression_score: float | None = None
+    people_score: float | None = None
+    scenery_score: float | None = None
+    face_count: int | None = None
     quality_score: float | None = None
     user_rating: int | None = None
 
@@ -38,6 +41,9 @@ class DuplicateItem:
     lighting_score: float | None
     composition_score: float | None
     expression_score: float | None
+    people_score: float | None
+    scenery_score: float | None
+    face_count: int | None
     user_rating: int | None
     suggested_action: str
 

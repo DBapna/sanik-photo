@@ -10,19 +10,21 @@ from tkinter import BOTH, END, LEFT, RIGHT, TOP, VERTICAL, W, X, filedialog, mes
 import tkinter as tk
 
 try:
-    from PIL import Image, ImageTk
+    from PIL import Image, ImageOps, ImageTk
 except ImportError:
     Image = None
+    ImageOps = None
     ImageTk = None
 
 from .database import PhotoDatabase
 from .duplicate_finder import find_exact_duplicate_groups, find_similar_photo_groups
 from .file_actions import move_review_duplicates, unique_target
+from .image_export import resize_photos
 from .models import DuplicateGroup
 from .organizer import caption_for_photo, suggested_organization_path
 from .scanner import scan_folder
 from .taste_model import load_taste_model, train_taste_model
-from .top_picks import DEFAULT_PICK_COUNT, DEFAULT_SCORE_THRESHOLD, select_top_picks
+from .top_picks import DEFAULT_PICK_COUNT, DEFAULT_SCORE_THRESHOLD, TOP_PICK_MODES, adjusted_quality, select_top_picks
 
 
 SANIK_LOGO_PATH = Path(
@@ -54,6 +56,7 @@ class PhotoManagerApp(tk.Tk):
         self.database = PhotoDatabase()
         self.selected_folder = tk.StringVar(value="")
         self.view_mode = tk.StringVar(value="Selected folder")
+        self.top_pick_mode = tk.StringVar(value="Balanced")
         self.status = tk.StringVar(value="Choose a folder to begin.")
         self.people_text = tk.StringVar(value="")
         self.preference_text = tk.StringVar(value="")
@@ -67,6 +70,7 @@ class PhotoManagerApp(tk.Tk):
         self.top_picks = []
         self.logo_image = None
         self.preview_image = None
+        self.large_preview_image = None
 
         self._configure_style()
         self._build_ui()
@@ -159,6 +163,8 @@ class PhotoManagerApp(tk.Tk):
         ttk.Button(actions, text="Caption", command=self._generate_selected_caption).pack(side=LEFT, padx=(8, 0))
         ttk.Button(actions, text="Top Picks", command=self._refresh_top_picks).pack(side=LEFT, padx=(8, 0))
         ttk.Button(actions, text="Export Picks", command=self._export_top_picks).pack(side=LEFT, padx=(8, 0))
+        ttk.Button(actions, text="Resize Export", command=self._resize_export_current_view).pack(side=LEFT, padx=(8, 0))
+        ttk.Button(actions, text="Large Review", command=self._open_large_review).pack(side=LEFT, padx=(8, 0))
         ttk.Button(actions, text="Train Model", command=self._train_taste_model).pack(side=LEFT, padx=(8, 0))
         ttk.Button(actions, text="Like", command=lambda: self._rate_selected_photo(1), style="Gold.TButton").pack(side=RIGHT)
         ttk.Button(actions, text="Maybe", command=lambda: self._rate_selected_photo(0)).pack(side=RIGHT, padx=(0, 8))
@@ -176,35 +182,45 @@ class PhotoManagerApp(tk.Tk):
         )
         view_selector.pack(side=LEFT, padx=8)
         view_selector.bind("<<ComboboxSelected>>", lambda _event: self._refresh_tables())
+        ttk.Label(filters, text="Top Picks Mode", style="Status.TLabel").pack(side=LEFT, padx=(16, 0))
+        mode_selector = ttk.Combobox(
+            filters,
+            textvariable=self.top_pick_mode,
+            values=TOP_PICK_MODES,
+            state="readonly",
+            width=18,
+        )
+        mode_selector.pack(side=LEFT, padx=8)
+        mode_selector.bind("<<ComboboxSelected>>", lambda _event: self._refresh_top_picks())
 
         self.notebook = ttk.Notebook(shell)
         self.notebook.pack(fill=BOTH, expand=True)
 
         self.photos_tree = self._make_tree(
             self.notebook,
-            ("filename", "pref", "score", "sharp", "light", "comp", "smile", "size", "modified", "path"),
-            ("Filename", "Pref", "Score", "Sharp", "Light", "Comp", "Smile", "Size", "Modified", "Path"),
+            ("filename", "pref", "score", "joy", "wow", "faces", "sharp", "light", "comp", "smile", "size", "modified", "path"),
+            ("Filename", "Pref", "Score", "Joy", "Wow", "Faces", "Sharp", "Light", "Comp", "Smile", "Size", "Modified", "Path"),
         )
         self.notebook.add(self.photos_tree.master, text="Library")
 
         self.duplicates_tree = self._make_tree(
             self.notebook,
-            ("group", "action", "pref", "score", "sharp", "light", "comp", "smile", "filename", "size", "path"),
-            ("Group", "Suggestion", "Pref", "Score", "Sharp", "Light", "Comp", "Smile", "Filename", "Size", "Path"),
+            ("group", "action", "pref", "score", "joy", "wow", "faces", "sharp", "light", "comp", "smile", "filename", "size", "path"),
+            ("Group", "Suggestion", "Pref", "Score", "Joy", "Wow", "Faces", "Sharp", "Light", "Comp", "Smile", "Filename", "Size", "Path"),
         )
         self.notebook.add(self.duplicates_tree.master, text="Exact Duplicates")
 
         self.similar_tree = self._make_tree(
             self.notebook,
-            ("group", "action", "pref", "score", "sharp", "light", "comp", "smile", "filename", "size", "path"),
-            ("Group", "Suggestion", "Pref", "Score", "Sharp", "Light", "Comp", "Smile", "Filename", "Size", "Path"),
+            ("group", "action", "pref", "score", "joy", "wow", "faces", "sharp", "light", "comp", "smile", "filename", "size", "path"),
+            ("Group", "Suggestion", "Pref", "Score", "Joy", "Wow", "Faces", "Sharp", "Light", "Comp", "Smile", "Filename", "Size", "Path"),
         )
         self.notebook.add(self.similar_tree.master, text="Similar Photos")
 
         self.top_picks_tree = self._make_tree(
             self.notebook,
-            ("rank", "pref", "score", "sharp", "light", "comp", "smile", "filename", "size", "path"),
-            ("Rank", "Pref", "Score", "Sharp", "Light", "Comp", "Smile", "Filename", "Size", "Path"),
+            ("rank", "pref", "score", "joy", "wow", "faces", "sharp", "light", "comp", "smile", "filename", "size", "path"),
+            ("Rank", "Pref", "Score", "Joy", "Wow", "Faces", "Sharp", "Light", "Comp", "Smile", "Filename", "Size", "Path"),
         )
         self.notebook.add(self.top_picks_tree.master, text="Top Picks")
 
@@ -276,7 +292,7 @@ class PhotoManagerApp(tk.Tk):
                 width = 420
             elif column == "filename":
                 width = 220
-            elif column in {"pref", "score", "sharp", "light", "comp", "smile"}:
+            elif column in {"pref", "score", "joy", "wow", "faces", "sharp", "light", "comp", "smile"}:
                 width = 70
             elif column == "action":
                 width = 110
@@ -353,6 +369,9 @@ class PhotoManagerApp(tk.Tk):
                     photo.filename,
                     format_preference(photo.user_rating),
                     format_score(photo.quality_score),
+                    format_score(photo.people_score),
+                    format_score(photo.scenery_score),
+                    format_count(photo.face_count),
                     format_score(photo.sharpness_score),
                     format_score(photo.lighting_score),
                     format_score(photo.composition_score),
@@ -377,6 +396,9 @@ class PhotoManagerApp(tk.Tk):
                         display_action(item.suggested_action),
                         format_preference(item.user_rating),
                         format_score(item.quality_score),
+                        format_score(item.people_score),
+                        format_score(item.scenery_score),
+                        format_count(item.face_count),
                         format_score(item.sharpness_score),
                         format_score(item.lighting_score),
                         format_score(item.composition_score),
@@ -405,6 +427,9 @@ class PhotoManagerApp(tk.Tk):
                         display_action(item.suggested_action),
                         format_preference(item.user_rating),
                         format_score(item.quality_score),
+                        format_score(item.people_score),
+                        format_score(item.scenery_score),
+                        format_count(item.face_count),
                         format_score(item.sharpness_score),
                         format_score(item.lighting_score),
                         format_score(item.composition_score),
@@ -526,7 +551,7 @@ class PhotoManagerApp(tk.Tk):
             self._load_preview(photo.path)
 
     def _load_preview(self, path: str) -> None:
-        if Image is None or ImageTk is None:
+        if Image is None or ImageOps is None or ImageTk is None:
             self.preview_label.configure(text="Install Pillow for previews", image="")
             self.preview_image = None
             return
@@ -601,6 +626,7 @@ class PhotoManagerApp(tk.Tk):
         self.top_picks = select_top_picks(
             self.database,
             count=DEFAULT_PICK_COUNT,
+            mode=self.top_pick_mode.get(),
             library_root=library_root,
             paths=paths,
         )
@@ -611,7 +637,10 @@ class PhotoManagerApp(tk.Tk):
                 values=(
                     index,
                     format_preference(photo.user_rating),
-                    format_score(photo.quality_score),
+                    format_score(adjusted_quality(photo, load_taste_model(self.database), self.top_pick_mode.get())),
+                    format_score(photo.people_score),
+                    format_score(photo.scenery_score),
+                    format_count(photo.face_count),
                     format_score(photo.sharpness_score),
                     format_score(photo.lighting_score),
                     format_score(photo.composition_score),
@@ -626,7 +655,7 @@ class PhotoManagerApp(tk.Tk):
             model_note = "taste model on" if load_taste_model(self.database) else "heuristics only"
             self.status.set(
                 f"Selected {len(self.top_picks)} top picks "
-                f"(best {DEFAULT_PICK_COUNT} plus any scoring {threshold}+, {model_note})."
+                f"({self.top_pick_mode.get()}, best {DEFAULT_PICK_COUNT} plus any scoring {threshold}+, {model_note})."
             )
 
     def _export_top_picks(self) -> None:
@@ -677,6 +706,86 @@ class PhotoManagerApp(tk.Tk):
         else:
             messagebox.showinfo("More feedback needed", result.message)
 
+    def _open_large_review(self) -> None:
+        photo_id = self._selected_photo_id()
+        if photo_id is None:
+            messagebox.showinfo("Select a photo", "Select one photo row first.")
+            return
+        photo = self.database.get_photo(photo_id)
+        if photo is None:
+            return
+
+        window = tk.Toplevel(self)
+        window.title("SanikPhoto Review")
+        window.geometry("980x760")
+        window.configure(bg=COLORS["bg"])
+
+        image_label = tk.Label(window, bg=COLORS["surface"], fg=COLORS["muted"])
+        image_label.pack(fill=BOTH, expand=True, padx=14, pady=14)
+        self._load_large_preview(photo.path, image_label)
+
+        details = ttk.Frame(window, padding=(14, 8), style="Toolbar.TFrame")
+        details.pack(fill=X)
+        ttk.Label(
+            details,
+            text=f"{photo.filename}  Score {format_score(photo.quality_score)}  "
+            f"Joy {format_score(photo.people_score)}  Wow {format_score(photo.scenery_score)}",
+            style="Path.TLabel",
+        ).pack(side=LEFT, fill=X, expand=True)
+        ttk.Button(details, text="Reject (R)", command=lambda: self._review_rate(window, photo.id, -1)).pack(side=RIGHT, padx=(8, 0))
+        ttk.Button(details, text="Maybe (M)", command=lambda: self._review_rate(window, photo.id, 0)).pack(side=RIGHT, padx=(8, 0))
+        ttk.Button(details, text="Like (L)", command=lambda: self._review_rate(window, photo.id, 1), style="Gold.TButton").pack(side=RIGHT)
+        window.bind("l", lambda _event: self._review_rate(window, photo.id, 1))
+        window.bind("m", lambda _event: self._review_rate(window, photo.id, 0))
+        window.bind("r", lambda _event: self._review_rate(window, photo.id, -1))
+
+    def _load_large_preview(self, path: str, image_label: tk.Label) -> None:
+        if Image is None or ImageTk is None:
+            image_label.configure(text="Install Pillow for previews")
+            return
+        try:
+            with Image.open(path) as image:
+                image = ImageOps.exif_transpose(image).convert("RGB")
+                image.thumbnail((930, 640))
+                self.large_preview_image = ImageTk.PhotoImage(image)
+            image_label.configure(image=self.large_preview_image, text="")
+        except Exception:
+            image_label.configure(text="Preview unavailable")
+
+    def _review_rate(self, window: tk.Toplevel, photo_id: int | None, rating: int) -> None:
+        if photo_id is None:
+            return
+        self.database.set_photo_rating(photo_id, rating)
+        self._refresh_tables()
+        self.status.set(f"Saved preference: {format_preference(rating)}.")
+        window.destroy()
+
+    def _resize_export_current_view(self) -> None:
+        photos = self._current_export_photos()
+        if not photos:
+            messagebox.showinfo("No photos", "There are no photos to resize in the current view.")
+            return
+        output = filedialog.askdirectory(title="Choose output folder for resized copies")
+        if not output:
+            return
+        max_width = simpledialog.askinteger("Resize width", "Maximum width", initialvalue=1920, minvalue=200, parent=self)
+        if max_width is None:
+            return
+        max_height = simpledialog.askinteger("Resize height", "Maximum height", initialvalue=1080, minvalue=200, parent=self)
+        if max_height is None:
+            return
+        quality = simpledialog.askinteger("JPEG quality", "JPEG quality (1-95)", initialvalue=85, minvalue=1, maxvalue=95, parent=self)
+        if quality is None:
+            return
+        resized = resize_photos(photos, output, max_width=max_width, max_height=max_height, quality=quality)
+        self.status.set(f"Saved {resized} resized copies to {output}.")
+
+    def _current_export_photos(self):
+        if self.notebook.select() == str(self.top_picks_tree.master):
+            return self.top_picks
+        library_root, paths = self._current_scope()
+        return self.database.list_photos(limit=1_000_000, library_root=library_root, paths=paths)
+
 
 def format_bytes(size: int) -> str:
     units = ("B", "KB", "MB", "GB")
@@ -694,6 +803,10 @@ def format_timestamp(timestamp: float) -> str:
 
 def format_score(score: float | None) -> str:
     return "" if score is None else f"{round(score * 100):d}"
+
+
+def format_count(count: int | None) -> str:
+    return "" if count is None else str(count)
 
 
 def display_action(action: str) -> str:

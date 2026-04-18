@@ -60,6 +60,9 @@ def scan_folder(folder: Path | str, progress: ProgressCallback | None = None) ->
             lighting_score=metadata["lighting_score"],
             composition_score=metadata["composition_score"],
             expression_score=metadata["expression_score"],
+            people_score=metadata["people_score"],
+            scenery_score=metadata["scenery_score"],
+            face_count=metadata["face_count"],
             quality_score=metadata["quality_score"],
         )
 
@@ -81,6 +84,9 @@ def image_metadata(path: Path) -> dict[str, int | float | str | None]:
         "lighting_score": None,
         "composition_score": None,
         "expression_score": None,
+        "people_score": None,
+        "scenery_score": None,
+        "face_count": None,
         "quality_score": None,
     }
     if Image is None or ImageOps is None:
@@ -98,6 +104,9 @@ def image_metadata(path: Path) -> dict[str, int | float | str | None]:
                 "lighting_score": scores.lighting,
                 "composition_score": scores.composition,
                 "expression_score": scores.expression,
+                "people_score": scores.people,
+                "scenery_score": scores.scenery,
+                "face_count": scores.face_count,
                 "quality_score": scores.overall,
             }
     except Exception:

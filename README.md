@@ -18,6 +18,7 @@ is available on this machine.
 - Detect exact duplicates using SHA-256 file hashes.
 - Detect reduced or lightly compressed copies when Pillow is installed.
 - Score photos for sharpness, lighting, composition, smile, and overall quality.
+- Score Joy, Wow, and face count for people/scenery-aware picking.
 - Suggest one standout per duplicate or similar-photo group.
 - Pick the top 15 photos, plus any extra photos scoring 75 or higher.
 - Train a local taste model from Like, Maybe, and Reject labels.
@@ -27,6 +28,8 @@ is available on this machine.
 - Tag people in selected photos.
 - Generate local captions and suggested organization paths.
 - Preview the selected image and open it in the Windows default photo app.
+- Review a selected photo in a larger window with quick Like/Maybe/Reject actions.
+- Resize photos in bulk into a separate output folder.
 - Move non-keeper duplicates to a review folder instead of deleting them.
 - Keep a record of file actions.
 
@@ -59,6 +62,10 @@ dimensions, perceptual hashes, and local quality scores:
 - **Comp**: simple composition estimate based on visual energy and balance.
 - **Smile**: local OpenCV-based face/smile estimate when a natural-looking smile
   is detected.
+- **Joy**: people-focused score based on visible faces, smile, sharpness, and
+  lighting.
+- **Wow**: scenery-focused score based on color richness, dynamic range,
+  composition, detail, and low face dominance.
 
 Smile scoring runs locally with OpenCV. If no face/smile is detected, the field
 stays blank. Rescan folders after installing dependencies to populate new Smile
@@ -102,6 +109,10 @@ Use the **Top Picks** tab to review the best photos from the current view:
 - **Selected folder**: picks from the folder currently chosen at the top.
 - **Last scan**: picks from only the most recent scan.
 - **All indexed**: picks from everything in the app database.
+- **Balanced**: mixes people joy, scenery wow, quality, and your taste model.
+- **Happy People**: favors visible, sharp, well-lit faces and natural smiles.
+- **Amazing Scenery**: favors color, dynamic range, composition, detail, and
+  landscape-style photos.
 
 The picker first chooses the standout from each similar-photo group, then fills
 the remaining slots by overall quality score. It always includes the best 15
@@ -125,6 +136,17 @@ _sanik_photo_top_picks
 
 Original photos stay where they are.
 
+## Review and Export
+
+- **Large Review**: opens the selected photo in a larger review window.
+- Keyboard shortcuts in Large Review:
+  - `L`: Like
+  - `M`: Maybe
+  - `R`: Reject
+- **Resize Export**: creates resized JPEG copies for the current view. If you are
+  on the Top Picks tab, it resizes the current picks; otherwise it resizes photos
+  in the selected app view. Originals stay untouched.
+
 ## Project Layout
 
 ```text
@@ -133,6 +155,7 @@ sanik_photo/
   database.py           SQLite schema and queries
   duplicate_finder.py   Duplicate grouping and keeper suggestions
   file_actions.py       Safe file move operations
+  image_export.py       Bulk resize/export helpers
   organizer.py          Captions and folder-path suggestions
   quality.py            Local photo quality scoring
   scanner.py            Folder scanning and hashing

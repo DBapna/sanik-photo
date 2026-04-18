@@ -25,12 +25,15 @@ class QualityScores:
     lighting: float
     composition: float
     expression: float | None
+    people: float | None
+    scenery: float
+    face_count: int
     overall: float
 
 
 def score_image(image: "Image.Image") -> QualityScores:
     if ImageFilter is None or ImageOps is None or ImageStat is None:
-        return QualityScores(0.0, 0.0, 0.0, None, 0.0)
+        return QualityScores(0.0, 0.0, 0.0, None, None, 0.0, 0, 0.0)
 
     prepared = ImageOps.exif_transpose(image).convert("RGB")
     thumbnail = prepared.copy()
@@ -40,7 +43,9 @@ def score_image(image: "Image.Image") -> QualityScores:
     sharpness = sharpness_score(grayscale)
     lighting = lighting_score(grayscale)
     composition = composition_score(grayscale)
-    expression = smile_expression_score(thumbnail)
+    face_count, face_presence, expression = face_expression_signals(thumbnail)
+    people = people_quality_score(face_presence, expression, sharpness, lighting)
+    scenery = scenery_quality_score(thumbnail, grayscale, sharpness, lighting, composition, face_presence)
 
     if expression is None:
         overall = (sharpness * 0.42) + (lighting * 0.33) + (composition * 0.25)
@@ -51,6 +56,9 @@ def score_image(image: "Image.Image") -> QualityScores:
         lighting=round(lighting, 3),
         composition=round(composition, 3),
         expression=expression,
+        people=round(people, 3) if people is not None else None,
+        scenery=round(scenery, 3),
+        face_count=face_count,
         overall=round(overall, 3),
     )
 
@@ -107,24 +115,27 @@ def composition_score(grayscale: "Image.Image") -> float:
     return clamp((focus_score * 0.55) + (balance * 0.35) + 0.15 - (border_penalty * 0.25))
 
 
-def smile_expression_score(image: "Image.Image") -> float | None:
+def face_expression_signals(image: "Image.Image") -> tuple[int, float | None, float | None]:
     if cv2 is None or np is None:
-        return None
+        return 0, None, None
 
     face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
     smile_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_smile.xml")
     if face_cascade.empty() or smile_cascade.empty():
-        return None
+        return 0, None, None
 
     cv_image = cv2.cvtColor(np.array(image.convert("RGB")), cv2.COLOR_RGB2BGR)
     gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
     faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(36, 36))
     if len(faces) == 0:
-        return None
+        return 0, None, None
 
     scores: list[float] = []
     image_area = gray.shape[0] * gray.shape[1]
+    face_presence_scores: list[float] = []
     for x, y, width, height in faces:
+        face_area_ratio = (width * height) / image_area
+        face_presence_scores.append(clamp(face_area_ratio * 8))
         face_gray = gray[y : y + height, x : x + width]
         lower_face = face_gray[height // 2 :, :]
         smiles = smile_cascade.detectMultiScale(
@@ -139,12 +150,65 @@ def smile_expression_score(image: "Image.Image") -> float | None:
 
         best = max(smiles, key=lambda smile: smile[2] * smile[3])
         smile_width_ratio = best[2] / width
-        face_area_ratio = (width * height) / image_area
         natural_width = 1 - abs(smile_width_ratio - 0.42) / 0.42
         face_size_score = clamp(face_area_ratio * 8)
         scores.append(clamp((natural_width * 0.75) + (face_size_score * 0.25)))
 
-    return round(max(scores), 3)
+    return len(faces), round(max(face_presence_scores), 3), round(max(scores), 3)
+
+
+def people_quality_score(
+    face_presence: float | None,
+    expression: float | None,
+    sharpness: float,
+    lighting: float,
+) -> float | None:
+    if face_presence is None:
+        return None
+    smile = expression if expression is not None else 0.25
+    return clamp((face_presence * 0.35) + (smile * 0.30) + (sharpness * 0.20) + (lighting * 0.15))
+
+
+def scenery_quality_score(
+    image: "Image.Image",
+    grayscale: "Image.Image",
+    sharpness: float,
+    lighting: float,
+    composition: float,
+    face_presence: float | None,
+) -> float:
+    richness = color_richness_score(image)
+    dynamic_range = dynamic_range_score(grayscale)
+    face_penalty = 0.18 * (face_presence or 0.0)
+    return clamp(
+        (richness * 0.28)
+        + (dynamic_range * 0.22)
+        + (composition * 0.20)
+        + (sharpness * 0.15)
+        + (lighting * 0.15)
+        - face_penalty
+    )
+
+
+def color_richness_score(image: "Image.Image") -> float:
+    sample = image.convert("HSV").resize((96, 96))
+    pixel_data = sample.get_flattened_data() if hasattr(sample, "get_flattened_data") else sample.getdata()
+    pixels = list(pixel_data)
+    if not pixels:
+        return 0.0
+    saturation = mean(pixel[1] for pixel in pixels) / 255
+    value = mean(pixel[2] for pixel in pixels) / 255
+    natural_saturation = 1 - abs(saturation - 0.48) / 0.48
+    return clamp((natural_saturation * 0.65) + (value * 0.35))
+
+
+def dynamic_range_score(grayscale: "Image.Image") -> float:
+    stat = ImageStat.Stat(grayscale)
+    contrast = clamp(stat.stddev[0] / 72)
+    histogram = grayscale.histogram()
+    total = sum(histogram) or 1
+    clipped = (sum(histogram[:6]) + sum(histogram[250:])) / total
+    return clamp(contrast - (clipped * 2.5))
 
 
 def horizontal_balance_score(pixels: list[int], width: int, height: int) -> float:

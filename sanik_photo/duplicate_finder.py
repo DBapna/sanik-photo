@@ -64,6 +64,9 @@ def find_similar_photo_groups(
                 lighting_score=item.lighting_score,
                 composition_score=item.composition_score,
                 expression_score=item.expression_score,
+                people_score=item.people_score,
+                scenery_score=item.scenery_score,
+                face_count=item.face_count,
                 user_rating=item.user_rating,
                 suggested_action="keep" if index == 0 else "review",
             )
